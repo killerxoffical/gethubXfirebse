@@ -232,9 +232,18 @@
         let activeProfile = null;
         // db is already declared in firebase-config.js
 
+        window.onload = async () => {
+            if (localStorage.getItem('v1_unlocked') === 'true') {
+                document.getElementById('pin-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                await loadProfilesFromFirestore();
+            }
+        };
+
         async function unlockApp() {
             const input = document.getElementById('pin-input').value;
             if (input === PIN) {
+                localStorage.setItem('v1_unlocked', 'true');
                 document.getElementById('pin-screen').classList.add('hidden');
                 document.getElementById('main-app').classList.remove('hidden');
                 await loadProfilesFromFirestore();
