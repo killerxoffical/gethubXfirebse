@@ -10,11 +10,11 @@ const PREDEFINED_PROFILES = {
     "BOOYAH BACKEND": {
         username: "killerxoffical",
         repo: "booyah-backend",
-        token: "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"
+        token: "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"
     },
     "Test Repo": {
         username: "killerxoffical",
         repo: "test-app",
-        token: "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"
+        token: "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"
     }
 };
