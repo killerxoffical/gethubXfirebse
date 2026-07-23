@@ -8,6 +8,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    
+    <!-- Firebase Config -->
+    <script src="firebase-config.js"></script>
+
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
         .bg-card { background-color: #161b22; border: 1px solid #30363d; }
@@ -220,25 +227,38 @@
     <script>
         const PIN = "5449";
         
-        let profiles = JSON.parse(localStorage.getItem('github_uploader_profiles')) || {};
+        let profiles = {};
         let activeProfile = null;
+        const db = firebase.firestore();
 
-        function unlockApp() {
+        async function unlockApp() {
             const input = document.getElementById('pin-input').value;
             if (input === PIN) {
                 document.getElementById('pin-screen').classList.add('hidden');
                 document.getElementById('main-app').classList.remove('hidden');
-                refreshProfileDropdown();
+                await loadProfilesFromFirestore();
             } else {
                 document.getElementById('pin-error').classList.remove('hidden');
             }
         }
 
         // --- Profile Management ---
+        
+        async function loadProfilesFromFirestore() {
+            try {
+                const snapshot = await db.collection('uploader_profiles').get();
+                profiles = {};
+                snapshot.forEach(doc => {
+                    profiles[doc.id] = doc.data();
+                });
+                refreshProfileDropdown();
+            } catch(e) {
+                console.error("Error loading profiles:", e);
+            }
+        }
 
         function refreshProfileDropdown() {
             const select = document.getElementById('profile-select');
-            // Clear existing except first
             while(select.options.length > 1) select.remove(1);
             
             for (const name in profiles) {
@@ -269,7 +289,7 @@
             }, 300);
         }
 
-        function saveNewProfile() {
+        async function saveNewProfile() {
             const name = document.getElementById('new-profile-name').value.trim();
             const username = document.getElementById('new-gh-username').value.trim();
             const repo = document.getElementById('new-gh-repo').value.trim();
@@ -280,21 +300,32 @@
                 return;
             }
             
-            profiles[name] = { username, repo, token };
-            localStorage.setItem('github_uploader_profiles', JSON.stringify(profiles));
-            
-            closeAddProfileModal();
-            refreshProfileDropdown();
-            
-            // Auto select it
-            document.getElementById('profile-select').value = name;
-            loadSelectedProfile();
-            
-            // Clear inputs
-            document.getElementById('new-profile-name').value = '';
-            document.getElementById('new-gh-username').value = '';
-            document.getElementById('new-gh-repo').value = '';
-            document.getElementById('new-gh-token').value = '';
+            const btn = document.querySelector('#add-profile-box button.btn-primary');
+            const oldText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> SAVING...';
+            btn.disabled = true;
+
+            try {
+                const profileData = { username, repo, token, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                await db.collection('uploader_profiles').doc(name).set(profileData);
+                profiles[name] = profileData;
+                
+                closeAddProfileModal();
+                refreshProfileDropdown();
+                
+                document.getElementById('profile-select').value = name;
+                loadSelectedProfile();
+                
+                document.getElementById('new-profile-name').value = '';
+                document.getElementById('new-gh-username').value = '';
+                document.getElementById('new-gh-repo').value = '';
+                document.getElementById('new-gh-token').value = '';
+            } catch(e) {
+                alert("Failed to save profile: " + e.message);
+            } finally {
+                btn.innerHTML = oldText;
+                btn.disabled = false;
+            }
         }
 
         function loadSelectedProfile() {
@@ -314,14 +345,18 @@
             document.getElementById('upload-tools').classList.remove('hidden');
         }
 
-        function deleteCurrentProfile() {
+        async function deleteCurrentProfile() {
             const name = document.getElementById('profile-select').value;
             if(!name) return;
             if(confirm(`Are you sure you want to delete profile '${name}'?`)) {
-                delete profiles[name];
-                localStorage.setItem('github_uploader_profiles', JSON.stringify(profiles));
-                refreshProfileDropdown();
-                loadSelectedProfile();
+                try {
+                    await db.collection('uploader_profiles').doc(name).delete();
+                    delete profiles[name];
+                    refreshProfileDropdown();
+                    loadSelectedProfile();
+                } catch(e) {
+                    alert("Failed to delete profile: " + e.message);
+                }
             }
         }
 
