@@ -15,6 +15,9 @@
     
     <!-- Firebase Config -->
     <script src="firebase-config.js"></script>
+    
+    <!-- Pre-saved Profiles -->
+    <script src="profiles.js"></script>
 
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
@@ -58,26 +61,39 @@
             <!-- Profile Selection Section -->
             <div id="profile-section" class="bg-card rounded-xl border border-[#30363d] shadow-lg p-6">
                 <div class="flex justify-between items-center mb-6 border-b border-[#30363d] pb-4">
-                    <h2 class="font-bold text-lg"><i class="fa-solid fa-users mr-2"></i> Select Profile</h2>
-                    <button onclick="openAddProfileModal()" class="bg-[#58a6ff]/10 text-[#58a6ff] hover:bg-[#58a6ff]/20 px-4 py-2 rounded-lg text-sm font-bold border border-[#58a6ff]/20 transition flex items-center gap-2">
-                        <i class="fa-solid fa-plus"></i> Add Profile
-                    </button>
+                    <h2 class="font-bold text-lg"><i class="fa-solid fa-users mr-2"></i> Select Connection</h2>
                 </div>
                 
                 <div class="mb-4">
                     <select id="profile-select" class="w-full input-field rounded-lg px-4 py-3 font-bold text-lg appearance-none cursor-pointer" onchange="loadSelectedProfile()">
-                        <option value="">-- Choose a Saved Profile --</option>
+                        <option value="">-- Choose a Connection --</option>
+                        <option value="manual">⚙️ Manual Connection (Don't Save)</option>
+                        <!-- Profiles from profiles.js will be injected here -->
                     </select>
                 </div>
                 
+                <div id="manual-connection-box" class="hidden mb-4 p-4 border border-[#30363d] rounded-lg bg-[#0d1117] space-y-4">
+                    <h3 class="font-bold text-sm text-[#8b949e] uppercase tracking-wide border-b border-[#30363d] pb-2 mb-2">Manual Connection</h3>
+                    <div>
+                        <label class="block text-xs font-bold text-[#8b949e] mb-1">GitHub Username</label>
+                        <input type="text" id="manual-username" class="w-full input-field rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-[#8b949e] mb-1">Repository Name</label>
+                        <input type="text" id="manual-repo" class="w-full input-field rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-[#8b949e] mb-1">Personal Access Token (PAT)</label>
+                        <input type="password" id="manual-token" class="w-full input-field rounded-lg px-3 py-2 font-mono">
+                    </div>
+                    <button onclick="connectManual()" class="w-full btn-primary py-2 rounded-lg font-bold mt-2">Connect Manually</button>
+                </div>
+
                 <div id="active-profile-info" class="hidden bg-[#0d1117] border border-[#30363d] rounded-lg p-4 flex justify-between items-center">
                     <div>
                         <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider font-bold">Active Connection</div>
-                        <div class="font-mono text-sm text-[#58a6ff]"><i class="fa-solid fa-user mr-2"></i><span id="active-username"></span> / <span id="active-repo"></span></div>
+                        <div class="font-mono text-sm text-[#58a6ff]"><i class="fa-solid fa-link mr-2"></i><span id="active-username"></span> / <span id="active-repo"></span></div>
                     </div>
-                    <button onclick="deleteCurrentProfile()" class="text-red-400 hover:text-red-300 text-sm font-bold bg-red-400/10 px-3 py-1.5 rounded-lg border border-red-400/20">
-                        <i class="fa-solid fa-trash mr-1"></i> Delete
-                    </button>
                 </div>
             </div>
 
@@ -189,54 +205,18 @@
         </main>
     </div>
 
-    <!-- Add Profile Modal -->
-    <div id="add-profile-modal" class="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center hidden p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">
-        <div class="bg-card p-6 rounded-2xl border border-[#30363d] w-full max-w-md shadow-2xl transform scale-95 transition-transform duration-300" id="add-profile-box">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-user-plus mr-2"></i> Add New Profile</h3>
-                <button onclick="closeAddProfileModal()" class="text-gray-500 hover:text-white transition">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-            
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-[#8b949e] mb-1 uppercase tracking-wide">Profile Name</label>
-                    <input type="text" id="new-profile-name" placeholder="e.g. Main Repo, Testing Repo" class="w-full input-field rounded-lg px-4 py-2.5">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-[#8b949e] mb-1 uppercase tracking-wide">GitHub Username</label>
-                    <input type="text" id="new-gh-username" placeholder="e.g. killerxoffical" class="w-full input-field rounded-lg px-4 py-2.5">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-[#8b949e] mb-1 uppercase tracking-wide">Repository Name</label>
-                    <input type="text" id="new-gh-repo" placeholder="e.g. booyahmini-app" class="w-full input-field rounded-lg px-4 py-2.5">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-[#8b949e] mb-1 uppercase tracking-wide">Personal Access Token (PAT)</label>
-                    <input type="password" id="new-gh-token" placeholder="ghp_xxxxxxxxxxxx" class="w-full input-field rounded-lg px-4 py-2.5 font-mono">
-                    <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank" class="text-xs text-[#58a6ff] hover:underline mt-1 inline-block"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Get Token from GitHub</a>
-                </div>
-                
-                <button onclick="saveNewProfile()" class="w-full btn-primary py-3 rounded-lg font-bold mt-4 shadow-[0_0_15px_rgba(35,134,54,0.3)]">
-                    <i class="fa-solid fa-floppy-disk mr-2"></i> SAVE PROFILE
-                </button>
-            </div>
-        </div>
-    </div>
+    <!-- Manual Connect logic will handle the UI -->
 
     <script>
         const PIN = "5449";
         
-        let profiles = {};
         let activeProfile = null;
-        // db is already declared in firebase-config.js
 
         window.onload = async () => {
             if (localStorage.getItem('v1_unlocked') === 'true') {
                 document.getElementById('pin-screen').classList.add('hidden');
                 document.getElementById('main-app').classList.remove('hidden');
-                await loadProfilesFromFirestore();
+                refreshProfileDropdown();
             }
         };
 
@@ -246,128 +226,68 @@
                 localStorage.setItem('v1_unlocked', 'true');
                 document.getElementById('pin-screen').classList.add('hidden');
                 document.getElementById('main-app').classList.remove('hidden');
-                await loadProfilesFromFirestore();
+                refreshProfileDropdown();
             } else {
                 document.getElementById('pin-error').classList.remove('hidden');
             }
         }
 
-        // --- Profile Management ---
-        
-        async function loadProfilesFromFirestore() {
-            try {
-                const snapshot = await db.collection('uploader_profiles').get();
-                profiles = {};
-                snapshot.forEach(doc => {
-                    profiles[doc.id] = doc.data();
-                });
-                refreshProfileDropdown();
-            } catch(e) {
-                console.error("Error loading profiles:", e);
-            }
-        }
+        // --- Connection Management ---
 
         function refreshProfileDropdown() {
             const select = document.getElementById('profile-select');
-            while(select.options.length > 1) select.remove(1);
+            // Remove previous pre-saved profiles, keep first 2 options
+            while(select.options.length > 2) select.remove(2);
             
-            for (const name in profiles) {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = name;
-                select.appendChild(opt);
-            }
-        }
-
-        function openAddProfileModal() {
-            const modal = document.getElementById('add-profile-modal');
-            const box = document.getElementById('add-profile-box');
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                box.classList.remove('scale-95');
-            }, 10);
-        }
-
-        function closeAddProfileModal() {
-            const modal = document.getElementById('add-profile-modal');
-            const box = document.getElementById('add-profile-box');
-            modal.classList.add('opacity-0');
-            box.classList.add('scale-95');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 300);
-        }
-
-        async function saveNewProfile() {
-            const name = document.getElementById('new-profile-name').value.trim();
-            const username = document.getElementById('new-gh-username').value.trim();
-            const repo = document.getElementById('new-gh-repo').value.trim();
-            const token = document.getElementById('new-gh-token').value.trim();
-            
-            if (!name || !username || !repo || !token) {
-                alert("Please fill in all fields.");
-                return;
-            }
-            
-            const btn = document.querySelector('#add-profile-box button.btn-primary');
-            const oldText = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> SAVING...';
-            btn.disabled = true;
-
-            try {
-                const profileData = { username, repo, token, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
-                await db.collection('uploader_profiles').doc(name).set(profileData);
-                profiles[name] = profileData;
-                
-                closeAddProfileModal();
-                refreshProfileDropdown();
-                
-                document.getElementById('profile-select').value = name;
-                loadSelectedProfile();
-                
-                document.getElementById('new-profile-name').value = '';
-                document.getElementById('new-gh-username').value = '';
-                document.getElementById('new-gh-repo').value = '';
-                document.getElementById('new-gh-token').value = '';
-            } catch(e) {
-                alert("Failed to save profile: " + e.message);
-            } finally {
-                btn.innerHTML = oldText;
-                btn.disabled = false;
+            if (typeof PREDEFINED_PROFILES !== 'undefined') {
+                for (const name in PREDEFINED_PROFILES) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    select.appendChild(opt);
+                }
             }
         }
 
         function loadSelectedProfile() {
-            const name = document.getElementById('profile-select').value;
-            if (!name || !profiles[name]) {
-                document.getElementById('active-profile-info').classList.add('hidden');
-                document.getElementById('upload-tools').classList.add('hidden');
-                activeProfile = null;
+            const selectValue = document.getElementById('profile-select').value;
+            const manualBox = document.getElementById('manual-connection-box');
+            const activeInfo = document.getElementById('active-profile-info');
+            const uploadTools = document.getElementById('upload-tools');
+            
+            activeProfile = null;
+            activeInfo.classList.add('hidden');
+            uploadTools.classList.add('hidden');
+            manualBox.classList.add('hidden');
+
+            if (selectValue === 'manual') {
+                manualBox.classList.remove('hidden');
+            } else if (selectValue && PREDEFINED_PROFILES[selectValue]) {
+                activeProfile = PREDEFINED_PROFILES[selectValue];
+                document.getElementById('active-username').textContent = activeProfile.username;
+                document.getElementById('active-repo').textContent = activeProfile.repo;
+                activeInfo.classList.remove('hidden');
+                uploadTools.classList.remove('hidden');
+            }
+        }
+
+        function connectManual() {
+            const username = document.getElementById('manual-username').value.trim();
+            const repo = document.getElementById('manual-repo').value.trim();
+            const token = document.getElementById('manual-token').value.trim();
+            
+            if (!username || !repo || !token) {
+                alert("Please fill in all fields.");
                 return;
             }
             
-            activeProfile = profiles[name];
+            activeProfile = { username, repo, token };
+            
+            document.getElementById('manual-connection-box').classList.add('hidden');
             document.getElementById('active-username').textContent = activeProfile.username;
             document.getElementById('active-repo').textContent = activeProfile.repo;
-            
             document.getElementById('active-profile-info').classList.remove('hidden');
             document.getElementById('upload-tools').classList.remove('hidden');
-        }
-
-        async function deleteCurrentProfile() {
-            const name = document.getElementById('profile-select').value;
-            if(!name) return;
-            if(confirm(`Are you sure you want to delete profile '${name}'?`)) {
-                try {
-                    await db.collection('uploader_profiles').doc(name).delete();
-                    delete profiles[name];
-                    refreshProfileDropdown();
-                    loadSelectedProfile();
-                } catch(e) {
-                    alert("Failed to delete profile: " + e.message);
-                }
-            }
         }
 
         // --- Upload Logic ---
