@@ -422,9 +422,12 @@
                                 data.forEach(item => { remoteFilesData[dir][item.name] = item.sha; });
                             }
                         } else {
+                            const errorData = await res.json();
+                            alert(`GitHub API Error: ${errorData.message}`);
                             remoteFilesData[dir] = {}; 
                         }
                     } catch (e) {
+                        alert(`GitHub API Connection Error: ${e.message}`);
                         remoteFilesData[dir] = {};
                     }
                 }
