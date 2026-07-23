@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Uploader (v1 - Classic)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+        .bg-card { background-color: #161b22; border: 1px solid #30363d; }
+        .input-field { background-color: #0d1117; border: 1px solid #30363d; color: #c9d1d9; }
+        .input-field:focus { border-color: #58a6ff; outline: none; }
+        .btn-primary { background-color: #238636; color: white; transition: all 0.2s; }
+        .btn-primary:hover { background-color: #2ea043; transform: scale(0.98); }
+        .btn-secondary { background-color: #21262d; border: 1px solid #363b42; color: #c9d1d9; transition: all 0.2s; }
+        .btn-secondary:hover { background-color: #30363d; border-color: #8b949e; transform: scale(0.98); }
+        .tab-active { border-bottom: 2px solid #58a6ff; color: #58a6ff; font-weight: bold; }
+        .tab-inactive { color: #8b949e; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- PIN Screen -->
+    <div id="pin-screen" class="fixed inset-0 bg-[#0d1117] z-[100] flex items-center justify-center">
+        <div class="bg-card p-8 rounded-xl shadow-2xl max-w-sm w-full text-center border-t-4 border-[#238636]">
+            <i class="fa-solid fa-lock text-4xl text-[#8b949e] mb-4"></i>
+            <h2 class="text-xl font-bold mb-6">Admin Verification</h2>
+            <input type="password" id="pin-input" placeholder="Enter PIN" class="w-full input-field rounded-lg px-4 py-3 text-center text-lg tracking-widest mb-4 font-bold" onkeypress="if(event.key === 'Enter') unlockApp()">
+            <button onclick="unlockApp()" class="w-full btn-primary py-3 rounded-lg font-bold">UNLOCK</button>
+            <p id="pin-error" class="text-red-400 text-sm mt-3 hidden">Incorrect PIN!</p>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" class="fixed inset-0 bg-black/80 z-[90] flex items-center justify-center hidden opacity-0 transition-opacity">
+        <div class="bg-card p-6 rounded-xl max-w-lg w-full border border-[#30363d]" id="info-modal-content">
+            <div class="flex justify-between items-center mb-4 border-b border-[#30363d] pb-2">
+                <h3 class="font-bold text-lg text-white"><i class="fa-solid fa-key text-yellow-400 mr-2"></i> Access Token Guide</h3>
+                <button onclick="closeInfoModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="text-sm space-y-3 text-gray-300">
+                <p>1. Open this link:</p>
+                <div class="flex gap-2">
+                    <input type="text" readonly value="https://github.com/settings/tokens/new" class="input-field rounded px-2 py-1 flex-1 text-xs" id="gh-token-url">
+                    <button onclick="copyTokenUrl()" class="btn-secondary px-3 rounded text-xs"><i class="fa-solid fa-copy"></i> Copy</button>
+                </div>
+                <p>2. Set <b>Expiration</b> to "No expiration".</p>
+                <p>3. Check the <b>repo</b> scope.</p>
+                <p>4. Generate token and paste it here.</p>
+            </div>
+            <button onclick="closeInfoModal()" class="w-full mt-6 btn-secondary py-2 rounded-lg font-bold">Close</button>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="hidden min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-[#161b22] border-b border-[#30363d] p-4 flex justify-between items-center sticky top-0 z-50">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fa-brands fa-github text-white text-2xl"></i> Uploader (Classic)
+            </h1>
+            <div class="text-sm text-[#8b949e]">Classic PAT Mode <i class="fa-solid fa-circle-check text-green-400 ml-1"></i></div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-8 max-w-6xl mx-auto w-full flex flex-col gap-6">
+            
+            <!-- Configuration Section -->
+            <div class="bg-card rounded-xl border border-[#30363d] p-6 shadow-lg">
+                <div class="flex justify-between items-center mb-4 border-b border-[#30363d] pb-3">
+                    <h2 class="font-bold text-lg"><i class="fa-solid fa-user-gear mr-2"></i> GitHub Configuration</h2>
+                    <div class="flex items-center gap-3">
+                        <select id="profile-selector" class="input-field rounded-lg px-3 py-1.5 text-sm font-medium" onchange="loadProfile()">
+                            <option value="">-- Select Saved Profile --</option>
+                        </select>
+                        <button onclick="saveCurrentProfile()" class="text-xs btn-secondary px-3 py-1.5 rounded-lg font-bold"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Current</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold mb-2">Username / Owner</label>
+                        <input type="text" id="github-user" placeholder="e.g. killerxoffical" class="w-full input-field rounded-lg px-4 py-2" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-2">Repository Name</label>
+                        <input type="text" id="github-repo" placeholder="e.g. booyahmini-app" class="w-full input-field rounded-lg px-4 py-2" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-2 flex items-center gap-2">
+                            <span class="text-[#f85149]">Personal Access Token</span>
+                            <button onclick="openInfoModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-circle-info"></i></button>
+                        </label>
+                        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx" class="w-full input-field rounded-lg px-4 py-2" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Mode Tabs -->
+            <div class="bg-card rounded-xl border border-[#30363d] overflow-hidden shadow-lg">
+                <div class="flex border-b border-[#30363d] bg-[#0d1117]">
+                    <button onclick="switchTab('zip')" id="tab-btn-zip" class="flex-1 py-4 text-center tab-active transition"><i class="fa-solid fa-file-zipper mr-2"></i> ZIP Upload</button>
+                    <button onclick="switchTab('normal')" id="tab-btn-normal" class="flex-1 py-4 text-center tab-inactive transition"><i class="fa-solid fa-upload mr-2"></i> Simple Upload</button>
+                </div>
+
+                <div class="p-8">
+                    <!-- ZIP Upload UI -->
+                    <div id="tab-content-zip" class="block">
+                        <div class="border-2 border-dashed border-[#30363d] rounded-xl p-10 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('zip-file').click()">
+                            <i class="fa-solid fa-box-open text-4xl text-[#8b949e] mb-4"></i>
+                            <h3 class="text-lg font-bold mb-1">Upload a ZIP file</h3>
+                            <p class="text-sm text-[#8b949e]">Files will be uploaded using their exact relative paths from the ZIP.</p>
+                            <input type="file" id="zip-file" accept=".zip" class="hidden" onchange="handleZipSelect(event)">
+                        </div>
+                    </div>
+
+                    <!-- Simple Upload UI -->
+                    <div id="tab-content-normal" class="hidden">
+                        <div class="mb-4 bg-[#0d1117] p-4 rounded-lg border border-[#30363d] flex items-center gap-4">
+                            <label class="font-bold text-sm whitespace-nowrap text-[#8b949e]">Target Directory in Repo (Optional):</label>
+                            <input type="text" id="target-dir" placeholder="e.g. assets/images (Leave blank for root)" class="input-field rounded-lg px-4 py-2 flex-1 font-mono">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="border-2 border-dashed border-[#30363d] rounded-xl p-8 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('normal-files').click()">
+                                <i class="fa-regular fa-file-code text-3xl text-[#8b949e] mb-2"></i>
+                                <h3 class="font-bold">Select Files</h3>
+                                <p class="text-xs text-gray-500">Any file type allowed</p>
+                                <input type="file" id="normal-files" multiple class="hidden" onchange="handleNormalSelect(event, false)">
+                            </div>
+                            <div class="border-2 border-dashed border-[#30363d] rounded-xl p-8 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('normal-folder').click()">
+                                <i class="fa-solid fa-folder-open text-3xl text-[#8b949e] mb-2"></i>
+                                <h3 class="font-bold">Select Folder</h3>
+                                <p class="text-xs text-gray-500">Upload folder maintaining structure</p>
+                                <input type="file" id="normal-folder" webkitdirectory directory multiple class="hidden" onchange="handleNormalSelect(event, true)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Section -->
+            <div id="analysis-section" class="hidden bg-card rounded-xl border border-[#30363d] p-6 shadow-lg flex-1 flex flex-col min-h-[400px]">
+                <h3 class="text-lg font-bold mb-4 border-b border-[#30363d] pb-3 flex justify-between items-center">
+                    <span>Selected Files (<span id="total-files-count" class="text-white">0</span>)</span>
+                    <span id="loading-status" class="text-sm text-yellow-400 font-normal bg-yellow-400/10 px-3 py-1 rounded-full"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Analyzing...</span>
+                </h3>
+                
+                <div class="flex-1 overflow-y-auto bg-[#0d1117] border border-[#30363d] rounded-lg relative">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-[#8b949e] uppercase bg-[#161b22] sticky top-0 z-10 shadow">
+                            <tr>
+                                <th class="px-4 py-3">File Path</th>
+                                <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-list-body" class="divide-y divide-[#30363d]"></tbody>
+                    </table>
+                </div>
+
+                <!-- Global Action Bar -->
+                <div id="action-bar" class="hidden flex items-center justify-between mt-4 bg-[#0d1117] p-4 border border-[#30363d] rounded-xl">
+                    <div class="text-sm flex gap-4">
+                        <div class="bg-green-400/10 text-green-400 px-3 py-1.5 rounded-lg border border-green-400/20">
+                            <span class="font-bold text-lg" id="new-files-count">0</span> New
+                        </div>
+                        <div class="bg-yellow-400/10 text-yellow-400 px-3 py-1.5 rounded-lg border border-yellow-400/20">
+                            <span class="font-bold text-lg" id="conflict-files-count">0</span> Conflicts
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="resolveAll('skip')" class="btn-secondary px-4 py-2 rounded-lg text-sm font-bold">Skip All</button>
+                        <button onclick="resolveAll('replace')" class="btn-secondary px-4 py-2 rounded-lg text-sm font-bold text-yellow-400">Replace All</button>
+                        <div class="w-px h-8 bg-[#30363d] mx-2"></div>
+                        <button onclick="startUpload()" class="btn-primary px-8 py-2.5 rounded-lg font-bold shadow-[0_0_15px_rgba(35,134,54,0.3)] text-lg"><i class="fa-solid fa-cloud-arrow-up mr-2"></i> UPLOAD</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progress-section" class="hidden bg-card p-8 rounded-xl border border-[#30363d] shadow-2xl">
+                <h3 class="font-bold text-xl mb-6 text-center flex items-center justify-center gap-3">
+                    <i class="fa-solid fa-satellite-dish animate-pulse text-[#58a6ff]"></i> Uploading to GitHub...
+                </h3>
+                
+                <div class="w-full bg-[#0d1117] rounded-full h-6 mb-3 overflow-hidden border border-[#30363d] relative">
+                    <div id="progress-bar" class="bg-[#58a6ff] h-full transition-all duration-300 shadow-[0_0_10px_rgba(88,166,255,0.5)]" style="width: 0%"></div>
+                    <div id="progress-percent" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-md">0%</div>
+                </div>
+                
+                <div class="text-center text-sm text-[#8b949e] mb-6 font-mono" id="progress-text">0 / 0 uploaded</div>
+                
+                <div id="upload-log" class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 h-48 overflow-y-auto text-xs font-mono text-gray-400 space-y-1.5 scroll-smooth"></div>
+                
+                <div id="upload-finish-bar" class="hidden mt-6 text-center">
+                    <button onclick="location.reload()" class="btn-secondary px-6 py-2 rounded-lg font-bold"><i class="fa-solid fa-rotate-right mr-2"></i> Done</button>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+
+    <script>
+        const PIN = "5449";
+        function unlockApp() {
+            if (document.getElementById('pin-input').value === PIN) {
+                document.getElementById('pin-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                initProfiles();
+            } else {
+                document.getElementById('pin-error').classList.remove('hidden');
+            }
+        }
+
+        function openInfoModal() {
+            const m = document.getElementById('info-modal');
+            m.classList.remove('hidden');
+            setTimeout(() => m.classList.remove('opacity-0'), 10);
+        }
+        function closeInfoModal() {
+            document.getElementById('info-modal').classList.add('opacity-0');
+            setTimeout(() => document.getElementById('info-modal').classList.add('hidden'), 300);
+        }
+        function copyTokenUrl() {
+            const url = document.getElementById('gh-token-url');
+            url.select();
+            document.execCommand('copy');
+            alert("URL Copied!");
+        }
+
+        function switchTab(tab) {
+            document.getElementById('tab-btn-zip').className = `flex-1 py-4 text-center transition ${tab === 'zip' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tab-btn-normal').className = `flex-1 py-4 text-center transition ${tab === 'normal' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tab-content-zip').style.display = tab === 'zip' ? 'block' : 'none';
+            document.getElementById('tab-content-normal').style.display = tab === 'normal' ? 'block' : 'none';
+        }
+
+        let profiles = JSON.parse(localStorage.getItem('ghProfiles_v1') || '{}');
+        function initProfiles() {
+            const select = document.getElementById('profile-selector');
+            select.innerHTML = '<option value="">-- Select Saved Profile --</option>';
+            for (const name in profiles) {
+                select.innerHTML += `<option value="${name}">${name}</option>`;
+            }
+        }
+        function saveCurrentProfile() {
+            const user = document.getElementById('github-user').value.trim();
+            const repo = document.getElementById('github-repo').value.trim();
+            const token = document.getElementById('github-token').value.trim();
+            if (!user || !repo || !token) return alert("Fill all fields first.");
+            const name = prompt("Name this profile:");
+            if (!name) return;
+            profiles[name] = { user, repo, token };
+            localStorage.setItem('ghProfiles_v1', JSON.stringify(profiles));
+            initProfiles();
+            document.getElementById('profile-selector').value = name;
+        }
+        function loadProfile() {
+            const name = document.getElementById('profile-selector').value;
+            if (name && profiles[name]) {
+                document.getElementById('github-user').value = profiles[name].user;
+                document.getElementById('github-repo').value = profiles[name].repo;
+                document.getElementById('github-token').value = profiles[name].token;
+            }
+        }
+
+        let extractedFiles = [];
+        let remoteFilesData = {}; 
+
+        function validateConfig() {
+            const t = document.getElementById('github-token').value.trim();
+            const u = document.getElementById('github-user').value.trim();
+            const r = document.getElementById('github-repo').value.trim();
+            if(!t || !u || !r) { alert("Please configure GitHub details first!"); return false; }
+            return true;
+        }
+
+        function setupAnalysisUI() {
+            document.getElementById('analysis-section').classList.remove('hidden');
+            document.getElementById('analysis-section').scrollIntoView({ behavior: 'smooth' });
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Extracting...';
+            document.getElementById('loading-status').className = 'text-sm text-yellow-400 font-normal bg-yellow-400/10 px-3 py-1 rounded-full';
+            document.getElementById('file-list-body').innerHTML = '';
+            document.getElementById('action-bar').classList.add('hidden');
+            extractedFiles = [];
+        }
+
+        async function handleZipSelect(event) {
+            const file = event.target.files[0];
+            if (!file || !validateConfig()) return;
+            setupAnalysisUI();
+
+            try {
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                
+                for (let relativePath in contents.files) {
+                    const zipEntry = contents.files[relativePath];
+                    if (zipEntry.dir) continue;
+
+                    // GENERIC: no path modification, take exactly as it is in zip
+                    let targetPath = relativePath;
+                    const base64Data = await zipEntry.async("base64");
+                    addFileToQueue(targetPath, base64Data);
+                }
+                await finalizeQueue();
+            } catch (err) {
+                alert("Error reading ZIP. " + err.message);
+            }
+        }
+
+        async function handleNormalSelect(event, isFolder) {
+            const files = event.target.files;
+            if (files.length === 0 || !validateConfig()) return;
+            
+            let targetDir = document.getElementById('target-dir').value.trim();
+            if(targetDir && !targetDir.endsWith('/')) targetDir += '/';
+
+            setupAnalysisUI();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                // if webkitdirectory, file.webkitRelativePath contains the full relative path
+                const filename = (isFolder && file.webkitRelativePath) ? file.webkitRelativePath : file.name;
+                const targetPath = `${targetDir}${filename}`;
+                
+                const base64Data = await readFileAsBase64(file);
+                addFileToQueue(targetPath, base64Data);
+            }
+            await finalizeQueue();
+            event.target.value = '';
+        }
+
+        function readFileAsBase64(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function addFileToQueue(targetPath, base64Data) {
+            extractedFiles.push({
+                targetPath: targetPath,
+                base64: base64Data,
+                status: 'checking', action: 'pending', sha: null 
+            });
+        }
+
+        async function finalizeQueue() {
+            document.getElementById('total-files-count').textContent = extractedFiles.length;
+            renderFileList();
+            
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-satellite-dish animate-pulse mr-2"></i>Checking GitHub...';
+            await checkGitHubConflicts();
+            
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-check mr-2"></i>Ready';
+            document.getElementById('loading-status').className = 'text-sm text-green-400 font-normal bg-green-400/10 px-3 py-1 rounded-full';
+            document.getElementById('action-bar').classList.remove('hidden');
+        }
+
+        async function checkGitHubConflicts() {
+            const user = document.getElementById('github-user').value.trim();
+            const repo = document.getElementById('github-repo').value.trim();
+            const token = document.getElementById('github-token').value.trim();
+            
+            const directories = [...new Set(extractedFiles.map(f => {
+                const lastSlash = f.targetPath.lastIndexOf('/');
+                return lastSlash !== -1 ? f.targetPath.substring(0, lastSlash) : '';
+            }))];
+            
+            let newCount = 0;
+            let conflictCount = 0;
+
+            for (const dir of directories) {
+                if (!remoteFilesData[dir]) {
+                    try {
+                        const url = dir === '' 
+                            ? `https://api.github.com/repos/${user}/${repo}/contents`
+                            : `https://api.github.com/repos/${user}/${repo}/contents/${dir}`;
+                        
+                        const res = await fetch(url, {
+                            headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            remoteFilesData[dir] = {};
+                            if(Array.isArray(data)) {
+                                data.forEach(item => { remoteFilesData[dir][item.name] = item.sha; });
+                            }
+                        } else {
+                            remoteFilesData[dir] = {}; 
+                        }
+                    } catch (e) {
+                        remoteFilesData[dir] = {};
+                    }
+                }
+            }
+
+            extractedFiles.forEach(file => {
+                const lastSlash = file.targetPath.lastIndexOf('/');
+                const dir = lastSlash !== -1 ? file.targetPath.substring(0, lastSlash) : '';
+                const filename = file.targetPath.split('/').pop();
+                
+                if (remoteFilesData[dir] && remoteFilesData[dir][filename]) {
+                    file.status = 'conflict';
+                    file.sha = remoteFilesData[dir][filename];
+                    file.action = 'skip'; 
+                    conflictCount++;
+                } else {
+                    file.status = 'new';
+                    file.action = 'upload';
+                    newCount++;
+                }
+            });
+
+            document.getElementById('new-files-count').textContent = newCount;
+            document.getElementById('conflict-files-count').textContent = conflictCount;
+            renderFileList();
+        }
+
+        function renderFileList() {
+            const tbody = document.getElementById('file-list-body');
+            tbody.innerHTML = '';
+            
+            extractedFiles.forEach((file, index) => {
+                let statusHtml = '';
+                let actionHtml = '';
+
+                if (file.status === 'checking') {
+                    statusHtml = '<span class="text-gray-400">Checking...</span>';
+                } else if (file.status === 'new') {
+                    statusHtml = '<span class="text-green-400 font-bold text-xs"><i class="fa-solid fa-check mr-1"></i> New</span>';
+                    actionHtml = '<span class="text-green-400 text-xs">Will Upload</span>';
+                } else if (file.status === 'conflict') {
+                    statusHtml = '<span class="text-yellow-400 text-xs font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Exists</span>';
+                    const isReplace = file.action === 'upload';
+                    actionHtml = `
+                        <button onclick="setAction(${index}, 'skip')" class="${!isReplace ? 'bg-white/10 text-white' : 'text-gray-500'} px-2 py-1 rounded text-xs mx-1">Skip</button>
+                        <button onclick="setAction(${index}, 'upload')" class="${isReplace ? 'bg-yellow-500/20 text-yellow-400' : 'text-gray-500'} px-2 py-1 rounded text-xs mx-1">Replace</button>
+                    `;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-white/5 border-b border-[#30363d]">
+                        <td class="px-4 py-3 font-mono text-[#58a6ff] text-xs">${file.targetPath}</td>
+                        <td class="px-4 py-3">${statusHtml}</td>
+                        <td class="px-4 py-3 text-right">${actionHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        window.setAction = function(index, action) { extractedFiles[index].action = action; renderFileList(); }
+        window.resolveAll = function(type) {
+            extractedFiles.forEach(f => { if (f.status === 'conflict') f.action = type === 'replace' ? 'upload' : 'skip'; });
+            renderFileList();
+        }
+
+        async function startUpload() {
+            const user = document.getElementById('github-user').value.trim();
+            const repo = document.getElementById('github-repo').value.trim();
+            const token = document.getElementById('github-token').value.trim();
+            
+            const filesToUpload = extractedFiles.filter(f => f.action === 'upload');
+            if (filesToUpload.length === 0) return alert("No files selected.");
+
+            document.getElementById('analysis-section').classList.add('hidden');
+            document.getElementById('progress-section').classList.remove('hidden');
+            
+            const pBar = document.getElementById('progress-bar');
+            const pTxt = document.getElementById('progress-text');
+            const pPct = document.getElementById('progress-percent');
+            const logArea = document.getElementById('upload-log');
+            
+            let errs = 0;
+            const log = (msg, isErr=false) => {
+                logArea.innerHTML += `<div class="${isErr?'text-red-400':'text-green-400'}">${msg}</div>`;
+                logArea.scrollTop = logArea.scrollHeight;
+            };
+
+            for (let i = 0; i < filesToUpload.length; i++) {
+                const file = filesToUpload[i];
+                const url = `https://api.github.com/repos/${user}/${repo}/contents/${file.targetPath}`;
+                
+                const body = { message: `Upload via Classic Uploader: ${file.targetPath}`, content: file.base64 };
+                if (file.sha) body.sha = file.sha;
+
+                try {
+                    const res = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    if (res.ok) log(`Uploaded: ${file.targetPath}`);
+                    else { errs++; log(`Failed ${file.targetPath}: ${(await res.json()).message}`, true); }
+                } catch (e) { errs++; log(`Error: ${e.message}`, true); }
+
+                const pct = Math.round(((i + 1) / filesToUpload.length) * 100);
+                pBar.style.width = `${pct}%`; pPct.textContent = `${pct}%`;
+                pTxt.textContent = `${i + 1} / ${filesToUpload.length} uploaded`;
+                await new Promise(r => setTimeout(r, 600));
+            }
+            document.getElementById('upload-finish-bar').classList.remove('hidden');
+            if (errs === 0) alert("Upload completed successfully!");
+            else alert(`Completed with ${errs} errors.`);
+        }
+    </script>
+</body>
+</html>
