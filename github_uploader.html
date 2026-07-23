@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booyah GitHub Uploader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    
+    <!-- Firebase Config -->
+    <script src="firebase-config.js"></script>
+
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+        .bg-card { background-color: #161b22; border: 1px solid #30363d; }
+        .input-field { background-color: #0d1117; border: 1px solid #30363d; color: #c9d1d9; }
+        .btn-primary { background-color: #238636; color: white; transition: all 0.2s; }
+        .btn-primary:hover { background-color: #2ea043; transform: scale(0.98); }
+        .btn-secondary { background-color: #21262d; border: 1px solid #363b42; color: #c9d1d9; transition: all 0.2s; }
+        .btn-secondary:hover { background-color: #30363d; border-color: #8b949e; transform: scale(0.98); }
+        .tab-active { border-bottom: 2px solid #58a6ff; color: #58a6ff; font-weight: bold; }
+        .tab-inactive { color: #8b949e; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- PIN Screen -->
+    <div id="pin-screen" class="fixed inset-0 bg-[#0d1117] z-[100] flex items-center justify-center">
+        <div class="bg-card p-8 rounded-xl shadow-2xl max-w-sm w-full text-center border-t-4 border-[#238636]">
+            <i class="fa-solid fa-lock text-4xl text-[#8b949e] mb-4"></i>
+            <h2 class="text-xl font-bold mb-6">Admin Verification</h2>
+            <input type="password" id="pin-input" placeholder="Enter PIN" class="w-full input-field rounded-lg px-4 py-3 text-center text-lg tracking-widest mb-4 font-bold" onkeypress="if(event.key === 'Enter') unlockApp()">
+            <button onclick="unlockApp()" class="w-full btn-primary py-3 rounded-lg font-bold">UNLOCK</button>
+            <p id="pin-error" class="text-red-400 text-sm mt-3 hidden">Incorrect PIN!</p>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="bg-card w-full max-w-md rounded-xl p-8 shadow-2xl text-center border-t-4 border-gray-600">
+            <i class="fa-brands fa-github text-6xl text-white mb-6"></i>
+            <h1 class="text-2xl font-bold mb-2">Sign in to Uploader</h1>
+            <p class="text-gray-400 text-sm mb-8">Authenticate with GitHub to access your repositories securely.</p>
+            
+            <button onclick="loginWithGitHub()" id="btn-gh-login" class="w-full bg-[#2ea043] hover:bg-[#238636] text-white py-3 rounded-lg font-bold flex items-center justify-center gap-3 transition">
+                <i class="fa-brands fa-github text-xl"></i> Login with GitHub
+            </button>
+            <p id="login-error" class="text-red-400 text-sm mt-4 hidden"></p>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="hidden min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-[#161b22] border-b border-[#30363d] p-4 flex justify-between items-center sticky top-0 z-50">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <i class="fa-brands fa-github text-white text-2xl"></i> Booyah Uploader
+            </h1>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 text-sm bg-[#0d1117] px-3 py-1.5 rounded-full border border-[#30363d]">
+                    <img id="user-avatar" src="" class="w-6 h-6 rounded-full hidden">
+                    <span id="user-name" class="font-bold text-white">Logged in</span>
+                </div>
+                <button onclick="logout()" class="text-xs text-red-400 hover:text-red-300 font-bold"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-8 max-w-6xl mx-auto w-full flex flex-col gap-6">
+            
+            <!-- Repository Selection Section -->
+            <div id="repo-section" class="bg-card rounded-xl border border-[#30363d] shadow-lg p-6">
+                <h2 class="font-bold text-lg mb-4 border-b border-[#30363d] pb-3"><i class="fa-solid fa-book-bookmark mr-2"></i> Select a Repository</h2>
+                <div id="repo-loading" class="text-center py-8 text-yellow-400"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i><p>Loading repositories...</p></div>
+                
+                <div id="repo-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden max-h-64 overflow-y-auto pr-2">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Upload Tools Section (Hidden until Repo selected) -->
+            <div id="upload-tools" class="hidden flex flex-col gap-6">
+                <div class="bg-green-400/10 border border-green-400/20 text-green-400 px-4 py-3 rounded-lg flex justify-between items-center">
+                    <div>Target Repository: <strong id="selected-repo-name" class="text-white text-lg ml-2">repo-name</strong></div>
+                    <button onclick="changeRepo()" class="btn-secondary px-3 py-1 text-xs rounded-lg">Change</button>
+                </div>
+
+                <div class="bg-card rounded-xl border border-[#30363d] overflow-hidden shadow-lg">
+                    <div class="flex border-b border-[#30363d] bg-[#0d1117]">
+                        <button onclick="switchTab('zip')" id="tab-btn-zip" class="flex-1 py-4 text-center tab-active transition"><i class="fa-solid fa-file-zipper mr-2"></i> ZIP Upload</button>
+                        <button onclick="switchTab('normal')" id="tab-btn-normal" class="flex-1 py-4 text-center tab-inactive transition"><i class="fa-solid fa-upload mr-2"></i> Normal Upload</button>
+                    </div>
+
+                    <div class="p-8">
+                        <div id="tab-content-zip" class="block">
+                            <div class="border-2 border-dashed border-[#30363d] rounded-xl p-10 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('zip-file').click()">
+                                <i class="fa-solid fa-box-open text-4xl text-[#8b949e] mb-4"></i>
+                                <h3 class="text-lg font-bold mb-1">Click to select a ZIP file</h3>
+                                <input type="file" id="zip-file" accept=".zip" class="hidden" onchange="handleZipSelect(event)">
+                            </div>
+                        </div>
+
+                        <div id="tab-content-normal" class="hidden">
+                            <div class="mb-4 bg-[#0d1117] p-4 rounded-lg border border-[#30363d] flex items-center gap-4">
+                                <label class="font-bold text-sm whitespace-nowrap">Target Category:</label>
+                                <select id="normal-category" class="input-field rounded-lg px-4 py-2 flex-1 font-bold">
+                                    <option value="avatar">Avatar</option>
+                                    <option value="banner">Banner</option>
+                                    <option value="badge">Badge</option>
+                                    <option value="currency">Currency</option>
+                                    <option value="icon">Icon</option>
+                                    <option value="slider">Slider</option>
+                                    <option value="others">Others</option>
+                                </select>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="border-2 border-dashed border-[#30363d] rounded-xl p-8 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('normal-files').click()">
+                                    <i class="fa-regular fa-images text-3xl text-[#8b949e] mb-2"></i>
+                                    <h3 class="font-bold">Select Files</h3>
+                                    <input type="file" id="normal-files" multiple accept="image/*" class="hidden" onchange="handleNormalSelect(event, false)">
+                                </div>
+                                <div class="border-2 border-dashed border-[#30363d] rounded-xl p-8 text-center hover:bg-[#1f242c] transition cursor-pointer" onclick="document.getElementById('normal-folder').click()">
+                                    <i class="fa-solid fa-folder-open text-3xl text-[#8b949e] mb-2"></i>
+                                    <h3 class="font-bold">Select Folder</h3>
+                                    <input type="file" id="normal-folder" webkitdirectory directory multiple class="hidden" onchange="handleNormalSelect(event, true)">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Section -->
+                <div id="analysis-section" class="hidden bg-card rounded-xl border border-[#30363d] p-6 shadow-lg flex-1 flex flex-col min-h-[400px]">
+                    <h3 class="text-lg font-bold mb-4 border-b border-[#30363d] pb-3 flex justify-between items-center">
+                        <span>Selected Files (<span id="total-files-count" class="text-booyahYellow">0</span>)</span>
+                        <span id="loading-status" class="text-sm text-yellow-400 font-normal bg-yellow-400/10 px-3 py-1 rounded-full"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Analyzing...</span>
+                    </h3>
+                    
+                    <div class="flex-1 overflow-y-auto bg-[#0d1117] border border-[#30363d] rounded-lg relative">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-[#8b949e] uppercase bg-[#161b22] sticky top-0 z-10 shadow">
+                                <tr>
+                                    <th class="px-4 py-3">File Path</th>
+                                    <th class="px-4 py-3">Status</th>
+                                    <th class="px-4 py-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-list-body" class="divide-y divide-[#30363d]"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Global Action Bar -->
+                    <div id="action-bar" class="hidden flex items-center justify-between mt-4 bg-[#0d1117] p-4 border border-[#30363d] rounded-xl">
+                        <div class="text-sm flex gap-4">
+                            <div class="bg-green-400/10 text-green-400 px-3 py-1.5 rounded-lg border border-green-400/20">
+                                <span class="font-bold text-lg" id="new-files-count">0</span> New Files
+                            </div>
+                            <div class="bg-yellow-400/10 text-yellow-400 px-3 py-1.5 rounded-lg border border-yellow-400/20">
+                                <span class="font-bold text-lg" id="conflict-files-count">0</span> Conflicts
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="resolveAll('skip')" class="btn-secondary px-4 py-2 rounded-lg text-sm font-bold">Skip All</button>
+                            <button onclick="resolveAll('replace')" class="btn-secondary px-4 py-2 rounded-lg text-sm font-bold text-yellow-400">Replace All</button>
+                            <div class="w-px h-8 bg-[#30363d] mx-2"></div>
+                            <button onclick="startUpload()" class="btn-primary px-8 py-2.5 rounded-lg font-bold shadow-[0_0_15px_rgba(35,134,54,0.3)] text-lg"><i class="fa-solid fa-cloud-arrow-up mr-2"></i> START UPLOAD</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Section -->
+                <div id="progress-section" class="hidden bg-card p-8 rounded-xl border border-[#30363d] shadow-2xl">
+                    <h3 class="font-bold text-xl mb-6 text-center flex items-center justify-center gap-3">
+                        <i class="fa-solid fa-satellite-dish animate-pulse text-[#58a6ff]"></i> Uploading to GitHub...
+                    </h3>
+                    
+                    <div class="w-full bg-[#0d1117] rounded-full h-6 mb-3 overflow-hidden border border-[#30363d] relative">
+                        <div id="progress-bar" class="bg-gradient-to-r from-[#238636] to-[#2ea043] h-full transition-all duration-300 shadow-[0_0_10px_rgba(46,160,67,0.5)]" style="width: 0%"></div>
+                        <div id="progress-percent" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-md">0%</div>
+                    </div>
+                    
+                    <div class="text-center text-sm text-[#8b949e] mb-6 font-mono" id="progress-text">0 / 0 uploaded</div>
+                    
+                    <div id="upload-log" class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 h-48 overflow-y-auto text-xs font-mono text-gray-400 space-y-1.5 scroll-smooth"></div>
+                    
+                    <div id="upload-finish-bar" class="hidden mt-6 text-center">
+                        <button onclick="location.reload()" class="btn-secondary px-6 py-2 rounded-lg font-bold"><i class="fa-solid fa-rotate-right mr-2"></i> Upload Another</button>
+                    </div>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+
+    <script>
+        // ==========================================
+        // PIN SECURITY
+        // ==========================================
+        const PIN = "5449";
+        function unlockApp() {
+            const input = document.getElementById('pin-input').value;
+            if (input === PIN) {
+                document.getElementById('pin-screen').classList.add('hidden');
+                checkAuthStatus();
+            } else {
+                document.getElementById('pin-error').classList.remove('hidden');
+            }
+        }
+
+        // ==========================================
+        // FIREBASE & GITHUB OAUTH
+        // ==========================================
+        let ghToken = null;
+        let selectedRepo = null; // format: "owner/repo"
+
+        function checkAuthStatus() {
+            document.getElementById('login-screen').classList.remove('hidden');
+            
+            firebase.auth().onAuthStateChanged(async (user) => {
+                if (user) {
+                    // Try to retrieve token from session/local if it exists
+                    ghToken = sessionStorage.getItem('ghToken');
+                    if(ghToken) {
+                        showApp(user);
+                    } else {
+                        // Token lost on reload, force re-login for GitHub Token
+                        // If we really wanted to persist OAuth tokens across reloads without re-login, 
+                        // we would have saved the credential.accessToken during signInWithPopup.
+                        // For safety, we require re-authentication if session is lost.
+                    }
+                }
+            });
+        }
+
+        function loginWithGitHub() {
+            const provider = new firebase.auth.GithubAuthProvider();
+            provider.addScope('repo'); // Request read/write access to code
+
+            document.getElementById('btn-gh-login').innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xl"></i> Connecting...';
+
+            firebase.auth().signInWithPopup(provider)
+                .then((result) => {
+                    ghToken = result.credential.accessToken;
+                    sessionStorage.setItem('ghToken', ghToken);
+                    showApp(result.user);
+                })
+                .catch((error) => {
+                    document.getElementById('btn-gh-login').innerHTML = '<i class="fa-brands fa-github text-xl"></i> Login with GitHub';
+                    document.getElementById('login-error').textContent = error.message;
+                    document.getElementById('login-error').classList.remove('hidden');
+                });
+        }
+
+        function showApp(user) {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            
+            document.getElementById('user-name').textContent = user.displayName || user.email || 'GitHub User';
+            if(user.photoURL) {
+                document.getElementById('user-avatar').src = user.photoURL;
+                document.getElementById('user-avatar').classList.remove('hidden');
+            }
+            
+            loadRepositories();
+        }
+
+        function logout() {
+            firebase.auth().signOut().then(() => {
+                sessionStorage.removeItem('ghToken');
+                location.reload();
+            });
+        }
+
+        // ==========================================
+        // REPOSITORY MANAGEMENT
+        // ==========================================
+        async function loadRepositories() {
+            const grid = document.getElementById('repo-grid');
+            const loading = document.getElementById('repo-loading');
+            
+            try {
+                // Fetch user's repos
+                const res = await fetch('https://api.github.com/user/repos?sort=updated&per_page=50', {
+                    headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json' }
+                });
+                
+                if(!res.ok) throw new Error("Failed to fetch repositories.");
+                
+                const repos = await res.json();
+                loading.classList.add('hidden');
+                grid.classList.remove('hidden');
+                grid.innerHTML = '';
+                
+                repos.forEach(repo => {
+                    grid.innerHTML += `
+                        <div onclick="selectRepo('${repo.full_name}')" class="bg-[#0d1117] border border-[#30363d] p-4 rounded-lg cursor-pointer hover:border-[#58a6ff] hover:bg-[#1f242c] transition group">
+                            <h3 class="font-bold text-white group-hover:text-[#58a6ff] truncate"><i class="fa-solid fa-book-bookmark text-[#8b949e] mr-2"></i>${repo.name}</h3>
+                            <p class="text-xs text-gray-500 truncate mt-1">${repo.full_name}</p>
+                            <div class="flex gap-3 mt-3 text-xs text-gray-400">
+                                <span><i class="fa-solid fa-star text-yellow-400 mr-1"></i>${repo.stargazers_count}</span>
+                                <span>${repo.private ? '<i class="fa-solid fa-lock"></i> Private' : '<i class="fa-solid fa-globe"></i> Public'}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (err) {
+                loading.innerHTML = `<p class="text-red-400">${err.message}</p>`;
+            }
+        }
+
+        function selectRepo(full_name) {
+            selectedRepo = full_name;
+            document.getElementById('repo-section').classList.add('hidden');
+            document.getElementById('upload-tools').classList.remove('hidden');
+            document.getElementById('selected-repo-name').textContent = full_name;
+        }
+
+        function changeRepo() {
+            document.getElementById('upload-tools').classList.add('hidden');
+            document.getElementById('repo-section').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // UI HELPERS (TABS)
+        // ==========================================
+        function switchTab(tab) {
+            document.getElementById('tab-btn-zip').className = `flex-1 py-4 text-center transition ${tab === 'zip' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tab-btn-normal').className = `flex-1 py-4 text-center transition ${tab === 'normal' ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tab-content-zip').style.display = tab === 'zip' ? 'block' : 'none';
+            document.getElementById('tab-content-normal').style.display = tab === 'normal' ? 'block' : 'none';
+        }
+
+        // ==========================================
+        // FILE HANDLING LOGIC (ZIP & Normal)
+        // ==========================================
+        let extractedFiles = [];
+        let remoteFilesData = {}; 
+
+        function setupAnalysisUI() {
+            document.getElementById('analysis-section').classList.remove('hidden');
+            document.getElementById('analysis-section').scrollIntoView({ behavior: 'smooth' });
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Extracting...';
+            document.getElementById('loading-status').className = 'text-sm text-yellow-400 font-normal bg-yellow-400/10 px-3 py-1 rounded-full';
+            document.getElementById('file-list-body').innerHTML = '';
+            document.getElementById('action-bar').classList.add('hidden');
+            extractedFiles = [];
+        }
+
+        // 1. ZIP File
+        async function handleZipSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            setupAnalysisUI();
+
+            try {
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                
+                for (let relativePath in contents.files) {
+                    const zipEntry = contents.files[relativePath];
+                    if (zipEntry.dir) continue;
+                    
+                    const ext = relativePath.split('.').pop().toLowerCase();
+                    if (!['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) continue;
+
+                    let cleanPath = relativePath;
+                    const parts = cleanPath.split('/');
+                    if (parts[0] !== 'images' && parts.length > 1) {
+                        const index = parts.findIndex(p => ['avatar', 'banner', 'badge', 'others', 'currency', 'slider', 'icon'].includes(p));
+                        if(index !== -1) cleanPath = `images/${parts.slice(index).join('/')}`;
+                    } else if (parts[0] !== 'images') {
+                        cleanPath = `images/${cleanPath}`; 
+                    }
+
+                    const base64Data = await zipEntry.async("base64");
+                    addFileToQueue(cleanPath, base64Data);
+                }
+                
+                await finalizeQueue();
+            } catch (err) {
+                alert("Error reading ZIP file. " + err.message);
+            }
+        }
+
+        // 2. Normal Files
+        async function handleNormalSelect(event, isFolder) {
+            const files = event.target.files;
+            if (files.length === 0) return;
+            
+            const category = document.getElementById('normal-category').value;
+            setupAnalysisUI();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) continue;
+
+                const filename = file.name;
+                const targetPath = `images/${category}/${filename}`;
+                
+                const base64Data = await readFileAsBase64(file);
+                addFileToQueue(targetPath, base64Data);
+            }
+            
+            await finalizeQueue();
+            event.target.value = '';
+        }
+
+        function readFileAsBase64(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function addFileToQueue(targetPath, base64Data) {
+            extractedFiles.push({
+                targetPath: targetPath,
+                base64: base64Data,
+                status: 'checking', action: 'pending', sha: null 
+            });
+        }
+
+        async function finalizeQueue() {
+            document.getElementById('total-files-count').textContent = extractedFiles.length;
+            renderFileList();
+            
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-satellite-dish animate-pulse mr-2"></i>Checking GitHub...';
+            await checkGitHubConflicts();
+            
+            document.getElementById('loading-status').innerHTML = '<i class="fa-solid fa-check mr-2"></i>Ready';
+            document.getElementById('loading-status').className = 'text-sm text-green-400 font-normal bg-green-400/10 px-3 py-1 rounded-full';
+            document.getElementById('action-bar').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // GITHUB API (CHECK & UPLOAD)
+        // ==========================================
+        async function checkGitHubConflicts() {
+            const directories = [...new Set(extractedFiles.map(f => f.targetPath.substring(0, f.targetPath.lastIndexOf('/'))))];
+            
+            let newCount = 0;
+            let conflictCount = 0;
+
+            for (const dir of directories) {
+                if (!remoteFilesData[dir]) {
+                    try {
+                        const res = await fetch(`https://api.github.com/repos/${selectedRepo}/contents/${dir}`, {
+                            headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json' }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            remoteFilesData[dir] = {};
+                            data.forEach(item => { remoteFilesData[dir][item.name] = item.sha; });
+                        } else {
+                            remoteFilesData[dir] = {}; 
+                        }
+                    } catch (e) {
+                        remoteFilesData[dir] = {};
+                    }
+                }
+            }
+
+            extractedFiles.forEach(file => {
+                const dir = file.targetPath.substring(0, file.targetPath.lastIndexOf('/'));
+                const filename = file.targetPath.split('/').pop();
+                
+                if (remoteFilesData[dir] && remoteFilesData[dir][filename]) {
+                    file.status = 'conflict';
+                    file.sha = remoteFilesData[dir][filename];
+                    file.action = 'skip'; 
+                    conflictCount++;
+                } else {
+                    file.status = 'new';
+                    file.action = 'upload';
+                    newCount++;
+                }
+            });
+
+            document.getElementById('new-files-count').textContent = newCount;
+            document.getElementById('conflict-files-count').textContent = conflictCount;
+            renderFileList();
+        }
+
+        function renderFileList() {
+            const tbody = document.getElementById('file-list-body');
+            tbody.innerHTML = '';
+            
+            extractedFiles.forEach((file, index) => {
+                let statusHtml = '';
+                let actionHtml = '';
+
+                if (file.status === 'checking') {
+                    statusHtml = '<span class="text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Checking...</span>';
+                } else if (file.status === 'new') {
+                    statusHtml = '<span class="text-green-400 bg-green-400/10 px-2 py-1 rounded text-xs border border-green-400/20 font-medium">New File</span>';
+                    actionHtml = '<span class="text-green-400 text-xs font-bold"><i class="fa-solid fa-check mr-1"></i> Will Upload</span>';
+                } else if (file.status === 'conflict') {
+                    statusHtml = '<span class="text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded text-xs border border-yellow-400/20 font-medium">Already Exists</span>';
+                    
+                    const isReplace = file.action === 'upload';
+                    actionHtml = `
+                        <div class="flex items-center justify-end gap-1.5 text-xs">
+                            <button onclick="setAction(${index}, 'skip')" class="${!isReplace ? 'bg-[#30363d] text-white border border-[#8b949e]' : 'text-gray-500 border border-transparent'} px-3 py-1.5 rounded-lg transition font-medium">Skip</button>
+                            <button onclick="setAction(${index}, 'upload')" class="${isReplace ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500' : 'text-gray-500 border border-transparent'} px-3 py-1.5 rounded-lg transition font-medium">Replace</button>
+                        </div>
+                    `;
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-[#1f242c] transition">
+                        <td class="px-4 py-3 font-mono text-[#58a6ff]">${file.targetPath}</td>
+                        <td class="px-4 py-3">${statusHtml}</td>
+                        <td class="px-4 py-3 text-right">${actionHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        window.setAction = function(index, action) {
+            extractedFiles[index].action = action;
+            renderFileList();
+        }
+
+        window.resolveAll = function(actionType) {
+            const action = actionType === 'replace' ? 'upload' : 'skip';
+            extractedFiles.forEach(f => {
+                if (f.status === 'conflict') f.action = action;
+            });
+            renderFileList();
+        }
+
+        async function startUpload() {
+            const filesToUpload = extractedFiles.filter(f => f.action === 'upload');
+            if (filesToUpload.length === 0) return alert("No files selected for upload.");
+
+            document.getElementById('analysis-section').classList.add('hidden');
+            document.getElementById('progress-section').classList.remove('hidden');
+            
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const progressPercent = document.getElementById('progress-percent');
+            const logArea = document.getElementById('upload-log');
+            
+            let successCount = 0;
+            let errorCount = 0;
+
+            const log = (msg, isErr = false) => {
+                const div = document.createElement('div');
+                div.innerHTML = `<span class="text-gray-500 mr-2">[${new Date().toLocaleTimeString()}]</span> ${isErr ? '<i class="fa-solid fa-xmark mr-1"></i>' : '<i class="fa-solid fa-check mr-1"></i>'} ${msg}`;
+                div.className = isErr ? 'text-red-400' : 'text-green-400';
+                logArea.appendChild(div);
+                logArea.scrollTop = logArea.scrollHeight;
+            };
+
+            for (let i = 0; i < filesToUpload.length; i++) {
+                const file = filesToUpload[i];
+                const url = `https://api.github.com/repos/${selectedRepo}/contents/${file.targetPath}`;
+                
+                const body = {
+                    message: `Auto-upload via Web Tool: ${file.targetPath}`,
+                    content: file.base64
+                };
+                if (file.sha) body.sha = file.sha;
+
+                try {
+                    const res = await fetch(url, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${ghToken}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (res.ok) {
+                        successCount++;
+                        log(`${file.targetPath} uploaded.`);
+                    } else {
+                        const errData = await res.json();
+                        errorCount++;
+                        log(`Failed ${file.targetPath}: ${errData.message}`, true);
+                    }
+                } catch (e) {
+                    errorCount++;
+                    log(`Error ${file.targetPath}: ${e.message}`, true);
+                }
+
+                const p = Math.round(((i + 1) / filesToUpload.length) * 100);
+                progressBar.style.width = `${p}%`;
+                progressPercent.textContent = `${p}%`;
+                progressText.textContent = `${i + 1} / ${filesToUpload.length} uploaded`;
+
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            document.getElementById('upload-finish-bar').classList.remove('hidden');
+            if (errorCount === 0) {
+                alert(`Successfully uploaded ${successCount} files!`);
+            } else {
+                alert(`Completed with ${errorCount} errors. Please check the logs.`);
+            }
+        }
+    </script>
+</body>
+</html>
