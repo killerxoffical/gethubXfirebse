@@ -26,7 +26,6 @@
         .btn-secondary:hover { background-color: #30363d; border-color: #8b949e; transform: scale(0.98); }
         .tab-active { border-bottom: 2px solid #58a6ff; color: #58a6ff; font-weight: bold; }
         .tab-inactive { color: #8b949e; }
-        
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #0d1117; }
         ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
@@ -203,10 +202,14 @@
     </div>
 
     <script>
-        // ==========================================
-        // PIN SECURITY
-        // ==========================================
         const PIN = "5449";
+        
+        // Skip PIN if we are returning from OAuth redirect
+        if (sessionStorage.getItem('gh_auth_in_progress')) {
+            document.getElementById('pin-screen').classList.add('hidden');
+            checkAuthStatus();
+        }
+
         function unlockApp() {
             const input = document.getElementById('pin-input').value;
             if (input === PIN) {
@@ -217,26 +220,33 @@
             }
         }
 
-        // ==========================================
-        // FIREBASE & GITHUB OAUTH
-        // ==========================================
         let ghToken = null;
-        let selectedRepo = null; // format: "owner/repo"
+        let selectedRepo = null;
 
         function checkAuthStatus() {
             document.getElementById('login-screen').classList.remove('hidden');
             
+            // Check redirect result first (if we just came back from GitHub)
+            firebase.auth().getRedirectResult()
+                .then((result) => {
+                    sessionStorage.removeItem('gh_auth_in_progress'); // Clear flag
+                    if (result.credential) {
+                        ghToken = result.credential.accessToken;
+                        sessionStorage.setItem('ghToken', ghToken);
+                    }
+                })
+                .catch((error) => {
+                    sessionStorage.removeItem('gh_auth_in_progress');
+                    document.getElementById('login-error').textContent = error.message;
+                    document.getElementById('login-error').classList.remove('hidden');
+                });
+
+            // Listen to auth state
             firebase.auth().onAuthStateChanged(async (user) => {
                 if (user) {
-                    // Try to retrieve token from session/local if it exists
                     ghToken = sessionStorage.getItem('ghToken');
                     if(ghToken) {
                         showApp(user);
-                    } else {
-                        // Token lost on reload, force re-login for GitHub Token
-                        // If we really wanted to persist OAuth tokens across reloads without re-login, 
-                        // we would have saved the credential.accessToken during signInWithPopup.
-                        // For safety, we require re-authentication if session is lost.
                     }
                 }
             });
@@ -244,21 +254,14 @@
 
         function loginWithGitHub() {
             const provider = new firebase.auth.GithubAuthProvider();
-            provider.addScope('repo'); // Request read/write access to code
-
-            document.getElementById('btn-gh-login').innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xl"></i> Connecting...';
-
-            firebase.auth().signInWithPopup(provider)
-                .then((result) => {
-                    ghToken = result.credential.accessToken;
-                    sessionStorage.setItem('ghToken', ghToken);
-                    showApp(result.user);
-                })
-                .catch((error) => {
-                    document.getElementById('btn-gh-login').innerHTML = '<i class="fa-brands fa-github text-xl"></i> Login with GitHub';
-                    document.getElementById('login-error').textContent = error.message;
-                    document.getElementById('login-error').classList.remove('hidden');
-                });
+            provider.addScope('repo');
+            document.getElementById('btn-gh-login').innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xl"></i> Redirecting...';
+            
+            // Set flag so we don't ask for PIN on reload
+            sessionStorage.setItem('gh_auth_in_progress', 'true');
+            
+            // Using Redirect instead of Popup to fix Netlify / Mobile browser issues
+            firebase.auth().signInWithRedirect(provider);
         }
 
         function showApp(user) {
@@ -281,15 +284,11 @@
             });
         }
 
-        // ==========================================
-        // REPOSITORY MANAGEMENT
-        // ==========================================
         async function loadRepositories() {
             const grid = document.getElementById('repo-grid');
             const loading = document.getElementById('repo-loading');
             
             try {
-                // Fetch user's repos
                 const res = await fetch('https://api.github.com/user/repos?sort=updated&per_page=50', {
                     headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json' }
                 });
@@ -330,9 +329,6 @@
             document.getElementById('repo-section').classList.remove('hidden');
         }
 
-        // ==========================================
-        // UI HELPERS (TABS)
-        // ==========================================
         function switchTab(tab) {
             document.getElementById('tab-btn-zip').className = `flex-1 py-4 text-center transition ${tab === 'zip' ? 'tab-active' : 'tab-inactive'}`;
             document.getElementById('tab-btn-normal').className = `flex-1 py-4 text-center transition ${tab === 'normal' ? 'tab-active' : 'tab-inactive'}`;
@@ -340,9 +336,6 @@
             document.getElementById('tab-content-normal').style.display = tab === 'normal' ? 'block' : 'none';
         }
 
-        // ==========================================
-        // FILE HANDLING LOGIC (ZIP & Normal)
-        // ==========================================
         let extractedFiles = [];
         let remoteFilesData = {}; 
 
@@ -356,7 +349,6 @@
             extractedFiles = [];
         }
 
-        // 1. ZIP File
         async function handleZipSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -392,7 +384,6 @@
             }
         }
 
-        // 2. Normal Files
         async function handleNormalSelect(event, isFolder) {
             const files = event.target.files;
             if (files.length === 0) return;
@@ -444,9 +435,6 @@
             document.getElementById('action-bar').classList.remove('hidden');
         }
 
-        // ==========================================
-        // GITHUB API (CHECK & UPLOAD)
-        // ==========================================
         async function checkGitHubConflicts() {
             const directories = [...new Set(extractedFiles.map(f => f.targetPath.substring(0, f.targetPath.lastIndexOf('/'))))];
             
